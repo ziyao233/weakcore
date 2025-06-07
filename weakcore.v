@@ -70,6 +70,7 @@ module weakcore(
 	wire is_lui		= instr_opcode == 7'b0110111;
 
 	wire is_addi    = is_imm_arith && instr_func3 == 3'b000;
+	wire is_slti    = is_imm_arith && instr_func3 == 3'b010;
 	wire is_add     = is_reg_arith && instr_func3 == 3'b000;
 	wire is_lw      = is_load && instr_func3 == 3'b010;
 	wire is_sw      = is_store && instr_func3 == 3'b010;
@@ -96,7 +97,7 @@ module weakcore(
 	wire is_s_type = is_sw;
 	wire is_b_type;
 	// 1 source register, 1 immediate
-	wire is_i_type = is_addi | is_lw;
+	wire is_i_type = is_imm_arith | is_lw;
 	// 0 source register, 1 immediate
 	wire is_u_type = is_lui;
 	wire is_j_type;
@@ -113,9 +114,10 @@ module weakcore(
 				({32{is_j_type}} & instr_j_imm);
 
 	/* How to execute the operation */
-	wire op_add = is_add | is_addi | is_lui;
-	wire op_load = is_load;
-	wire op_store = is_store;
+	wire op_add		= is_add | is_addi | is_lui;
+	wire op_load		= is_load;
+	wire op_store		= is_store;
+	wire op_cmp_less	= is_slti;
 
 	wire [31:0] op_arg1 = {32{is_reg_arg1}} & regs[instr_rs1];
 	wire [31:0] op_arg2 = ({32{is_reg_arg2}} & regs[instr_rs2]) |
@@ -127,14 +129,28 @@ module weakcore(
 	wire [31:0] op_addr = op_addr_base + op_addr_disp;
 
 	/* How to process the result in writeback stage */
-	wire op_wb = is_addi | is_add | is_load | is_lui;
+	wire op_wb = is_imm_arith | is_add | is_load | is_lui;
 	wire op_jump;
 
 	/* =========================== Execution ====================== */
 	reg [31:0] op_result;
 
+	wire [31:0] exe_adder_src1 = op_arg1;
+	wire [31:0] exe_adder_src2 = ({32{op_add}} & op_arg2)		|
+				     ({32{op_cmp_less}} & ~op_arg2);
+	wire exe_adder_cin = op_cmp_less;
+	wire exe_adder_cout;
+	wire [31:0] exe_adder_res;
+	assign {exe_adder_cout, exe_adder_res} =
+		exe_adder_src1 + exe_adder_src2 + {{31'b0, exe_adder_cin}};
+
+	wire exe_cmp_less =
+		(op_arg1[31] & ~op_arg2[31])	|
+		(~(op_arg1[31] ^ op_arg2[31]) & exe_adder_res[31]);
+
 	wire [31:0] op_tmp_result =
-		({32{op_add}} & (op_arg1 + op_arg2))		|
+		({32{op_add}} & exe_adder_res)			|
+		({32{op_cmp_less}} & {{31'b0, exe_cmp_less}})	|
 		({32{op_load}} & bus_in);
 
 	assign ready_exe = (~op_load & ~op_store) | bus_ack;
