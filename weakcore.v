@@ -30,7 +30,8 @@ module weakcore(
 	wire stage_exe = stage_state[2];
 	wire stage_wb = stage_state[3];
 	wire ready_if;
-	wire [3:0] stage_ready = { 3'b111, ready_if };
+	wire ready_exe;
+	wire [3:0] stage_ready = { 1'b1, ready_exe, 1'b1, ready_if };
 
 	always @ (posedge clk) begin
 		if (~rst)
@@ -41,21 +42,19 @@ module weakcore(
 
 	/* ================= Instruction fetch ======================== */
 	reg [31:0] pc;
+	reg [31:0] instr_pc;
 	reg [31:0] instr;
 	always @ (posedge clk) begin
 		if (~rst) begin
 			pc <= 32'h0;
 		end else if (stage_if & bus_ack) begin
+			instr_pc <= pc;
 			pc <= pc + 32'd4;
 			instr <= bus_in;
 		end
 	end
 
 	assign ready_if	= bus_ack;
-
-	assign bus_req	= stage_if;
-	assign bus_addr	= pc;
-	assign bus_wr	= 1'b0;
 
 	/* ===================== Decode =============================== */
 	/* RISC-V instruction formats */
@@ -68,6 +67,7 @@ module weakcore(
 	wire is_store           = instr_opcode == 7'b0100011;
 	wire is_imm_arith       = instr_opcode == 7'b0010011;
 	wire is_reg_arith       = instr_opcode == 7'b0110011;
+	wire is_lui		= instr_opcode == 7'b0110111;
 
 	wire is_addi    = is_imm_arith && instr_func3 == 3'b000;
 	wire is_add     = is_reg_arith && instr_func3 == 3'b000;
@@ -98,7 +98,7 @@ module weakcore(
 	// 1 source register, 1 immediate
 	wire is_i_type = is_addi | is_lw;
 	// 0 source register, 1 immediate
-	wire is_u_type;
+	wire is_u_type = is_lui;
 	wire is_j_type;
 
 	wire is_reg_arg1 = is_r_type | is_s_type | is_b_type | is_i_type;
@@ -113,23 +113,35 @@ module weakcore(
 				({32{is_j_type}} & instr_j_imm);
 
 	/* How to execute the operation */
-	wire op_add = is_add | is_addi;
-	wire op_load;
-	wire op_store;
+	wire op_add = is_add | is_addi | is_lui;
+	wire op_load = is_load;
+	wire op_store = is_store;
 
 	wire [31:0] op_arg1 = {32{is_reg_arg1}} & regs[instr_rs1];
 	wire [31:0] op_arg2 = ({32{is_reg_arg2}} & regs[instr_rs2]) |
 			      ({32{is_with_imm}} & instr_imm);
 
+	wire [31:0] op_addr_base = ({32{is_load}} & regs[instr_rs1])	|
+				   ({32{is_store}} & regs[instr_rs1]);
+	wire [31:0] op_addr_disp = instr_imm;
+	wire [31:0] op_addr = op_addr_base + op_addr_disp;
+
 	/* How to process the result in writeback stage */
-	wire op_wb = is_addi | is_add | is_load;
+	wire op_wb = is_addi | is_add | is_load | is_lui;
 	wire op_jump;
 
 	/* =========================== Execution ====================== */
 	reg [31:0] op_result;
 
 	wire [31:0] op_tmp_result =
-		{32{op_add}} & (op_arg1 + op_arg2);
+		({32{op_add}} & (op_arg1 + op_arg2))		|
+		({32{op_load}} & bus_in);
+
+	assign ready_exe = (~op_load & ~op_store) | bus_ack;
+
+	wire exe_bus_req = op_load | op_store;
+	wire exe_bus_wr = op_store;
+	wire [31:0] exe_bus_out = op_arg2;
 
 	always @ (posedge clk) begin
 		if (~rst)
@@ -144,6 +156,13 @@ module weakcore(
 			regs[instr_rd] <= op_result;
 		end
 	end
+
+	/* ========================== Bus control ====================== */
+	assign bus_req	= stage_if | (stage_exe & exe_bus_req);
+	assign bus_addr	= ({32{stage_if}} & pc) |
+			  ({32{stage_exe & exe_bus_req}} & op_addr);
+	assign bus_wr	= stage_exe & exe_bus_wr;
+	assign bus_out	= {32{stage_exe & exe_bus_req}} & exe_bus_out;
 
 `ifdef DUMP
 	initial begin
