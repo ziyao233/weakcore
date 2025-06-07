@@ -62,22 +62,22 @@ module weakcore(
 	wire [2:0] instr_func3 = instr[14:12];
 	wire [6:0] instr_func7 = instr[31:25];
 
-	wire is_cond_branch     = instr_opcode == 7'b1100011;
-	wire is_load            = instr_opcode == 7'b0000011;
-	wire is_store           = instr_opcode == 7'b0100011;
-	wire is_imm_arith       = instr_opcode == 7'b0010011;
-	wire is_reg_arith       = instr_opcode == 7'b0110011;
+	wire is_cond_branch	= instr_opcode == 7'b1100011;
+	wire is_load		= instr_opcode == 7'b0000011;
+	wire is_store		= instr_opcode == 7'b0100011;
+	wire is_imm_arith	= instr_opcode == 7'b0010011;
+	wire is_reg_arith	= instr_opcode == 7'b0110011;
 	wire is_lui		= instr_opcode == 7'b0110111;
 
-	wire is_addi    = is_imm_arith && instr_func3 == 3'b000;
-	wire is_slti    = is_imm_arith && instr_func3 == 3'b010;
-	wire is_add     = is_reg_arith && instr_func3 == 3'b000;
-	wire is_lw      = is_load && instr_func3 == 3'b010;
-	wire is_sw      = is_store && instr_func3 == 3'b010;
+	wire is_addi	= is_imm_arith && instr_func3 == 3'b000;
+	wire is_slti	= is_imm_arith && instr_func3 == 3'b010;
+	wire is_add	= is_reg_arith && instr_func3 == 3'b000;
+	wire is_lw	= is_load && instr_func3 == 3'b010;
+	wire is_sw	= is_store && instr_func3 == 3'b010;
 
-	wire [4:0] instr_rd     = instr[11:7];
-	wire [4:0] instr_rs1    = instr[19:15];
-	wire [4:0] instr_rs2    = instr[24:20];
+	wire [4:0] instr_rd	= instr[11:7];
+	wire [4:0] instr_rs1	= instr[19:15];
+	wire [4:0] instr_rs2	= instr[24:20];
 
 	wire [31:0] instr_i_imm = {{20{instr[31]}}, instr[31:20]};
 	wire [31:0] instr_s_imm = {{20{instr[31]}}, instr[31:25], instr_rd};
