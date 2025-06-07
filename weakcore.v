@@ -68,6 +68,7 @@ module weakcore(
 	wire is_imm_arith	= instr_opcode == 7'b0010011;
 	wire is_reg_arith	= instr_opcode == 7'b0110011;
 	wire is_lui		= instr_opcode == 7'b0110111;
+	wire is_auipc		= instr_opcode == 7'b0010111;
 
 	wire is_addi	= is_imm_arith && instr_func3 == 3'b000;
 	wire is_slti	= is_imm_arith && instr_func3 == 3'b010;
@@ -114,12 +115,13 @@ module weakcore(
 				({32{is_j_type}} & instr_j_imm);
 
 	/* How to execute the operation */
-	wire op_add		= is_add | is_addi | is_lui;
+	wire op_add		= is_add | is_addi | is_lui | is_auipc;
 	wire op_load		= is_load;
 	wire op_store		= is_store;
 	wire op_cmp_less	= is_slti;
 
-	wire [31:0] op_arg1 = {32{is_reg_arg1}} & regs[instr_rs1];
+	wire [31:0] op_arg1 = ({32{is_reg_arg1}} & regs[instr_rs1]) |
+			      ({32{is_auipc}} & instr_pc);
 	wire [31:0] op_arg2 = ({32{is_reg_arg2}} & regs[instr_rs2]) |
 			      ({32{is_with_imm}} & instr_imm);
 
@@ -129,7 +131,7 @@ module weakcore(
 	wire [31:0] op_addr = op_addr_base + op_addr_disp;
 
 	/* How to process the result in writeback stage */
-	wire op_wb = is_imm_arith | is_add | is_load | is_lui;
+	wire op_wb = is_imm_arith | is_add | is_load | is_lui | is_auipc;
 	wire op_jump;
 
 	/* =========================== Execution ====================== */
