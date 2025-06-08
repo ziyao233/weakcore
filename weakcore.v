@@ -97,6 +97,8 @@ module weakcore(
 	wire is_lbu	= is_load && instr_func3 == 3'b100;
 	wire is_lhu	= is_load && instr_func3 == 3'b101;
 
+	wire is_sb	= is_store && instr_func3 == 3'b000;
+	wire is_sh	= is_store && instr_func3 == 3'b001;
 	wire is_sw	= is_store && instr_func3 == 3'b010;
 
 	wire [4:0] instr_rd	= instr[11:7];
@@ -120,7 +122,7 @@ module weakcore(
 	// 2 source registers, 0 immediate
 	wire is_r_type = is_add | is_imm_shift;
 	// 1 source registers, 1 immediate, no destination, 1 address register
-	wire is_s_type = is_sw;
+	wire is_s_type = is_store;
 	wire is_b_type = is_cond_branch;
 	// 1 source register, 1 immediate
 	wire is_i_type = (is_imm_arith & ~is_imm_shift) | is_load | is_jalr;
@@ -131,7 +133,7 @@ module weakcore(
 	wire is_reg_arg1 = is_r_type | is_s_type | is_b_type | is_i_type;
 	wire is_reg_arg2 = is_r_type | is_s_type | is_b_type;
 	// In B-Type, IMMs are not for operands but for addressing
-	wire is_with_imm = is_s_type | is_i_type | is_u_type | is_j_type;
+	wire is_with_imm = is_i_type | is_u_type | is_j_type;
 
 	wire [31:0] instr_imm = ({32{is_s_type}} & instr_s_imm) |
 				({32{is_b_type}} & instr_b_imm) |
@@ -159,9 +161,9 @@ module weakcore(
 
 	wire [4:0] op_shamt = ({5{is_imm_shift}} & instr_shift_shamt);
 
-	wire op_mem_1b = is_lb | is_lbu;
-	wire op_mem_2b = is_lh | is_lhu;
-	wire op_mem_4b = is_lw;
+	wire op_mem_1b = is_lb | is_lbu | is_sb;
+	wire op_mem_2b = is_lh | is_lhu | is_sh;
+	wire op_mem_4b = is_lw | is_sw;
 	wire op_mem_signext = is_lb | is_lh;
 
 	wire [31:0] op_addr_base = ({32{is_load}} & regs[instr_rs1])	|
@@ -205,16 +207,20 @@ module weakcore(
 
 	wire exe_bus_req = op_load | op_store;
 	wire exe_bus_wr = op_store;
-	wire [31:0] exe_bus_out = op_arg2;
 
 	wire [31:0] exe_load_mask = ({24'b0, {8{op_mem_1b}}})	|
 				    ({16'b0, {16{op_mem_2b}}})	|
 				    ({32{op_mem_4b}});
-	wire [4:0] exe_load_shift = {op_addr[1:0], 3'b000};
-	wire [31:0] exe_load_data = (bus_in >> exe_load_shift) & exe_load_mask;
+	wire [4:0] exe_mem_shift = {op_addr[1:0], 3'b000};
+	wire [31:0] exe_load_data = (bus_in >> exe_mem_shift) & exe_load_mask;
 	wire [31:0] exe_load_res = exe_load_data | (op_mem_signext ?
 		{{24{op_mem_1b & exe_load_data[7]}}, 8'b0}	|
 		{{16{op_mem_2b & exe_load_data[15]}}, 16'b0} : 0);
+	wire [31:0] exe_bus_out = op_arg2 << exe_mem_shift;
+	wire [3:0] exe_bus_wr_mask =
+		({3'b0, op_mem_1b}		|
+		 {2'b0, {2{op_mem_2b}}}		|
+		 {4{op_mem_4b}}) << op_addr[1:0];
 
 	wire [31:0] op_tmp_result =
 		({32{op_add}} & exe_adder_res)				|
@@ -261,7 +267,7 @@ module weakcore(
 			  ({32{stage_exe & exe_bus_req}} & op_addr & ~32'b11);
 	assign bus_wr	= stage_exe & exe_bus_wr;
 	assign bus_out	= {32{stage_exe & exe_bus_req}} & exe_bus_out;
-	assign bus_wr_mask = 4'b1111;
+	assign bus_wr_mask = exe_bus_wr_mask;
 
 `ifdef DUMP
 	initial begin

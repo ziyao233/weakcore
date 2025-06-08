@@ -48,10 +48,11 @@ if arg[1] then
 end
 
 local printBusOperation = os.getenv("DEBUG_BUS") and
-	function(wr, addr, data)
+	function(wr, wr_mask, addr, data)
+		local maskMsg = wr and (" mask = 0x%x"):format(wr_mask) or "";
 		data = wr and data or ram[addr / 4 + 1];
-		print(("BUSOP: %s 0x%08x, data = 0x%08x"):
-		      format(wr and "write" or "read", addr, data));
+		print(("BUSOP: %s 0x%08x, data = 0x%08x%s"):
+		      format(wr and "write" or "read", addr, data, maskMsg));
 	end or
 	function() end;
 
@@ -68,7 +69,7 @@ bench:register(function(bench)
 			local wr = bench:get("bus_wr") == 1;
 			local wr_mask = bench:get("bus_wr_mask");
 
-			printBusOperation(wr, addr, data);
+			printBusOperation(wr, wr_mask, addr, data);
 
 			bench:waitClk("posedge");
 
