@@ -152,7 +152,7 @@ module weakcore(
 	// 1 source register, 1 immediate
 	wire is_i_type = (is_imm_arith & ~is_imm_shift) | is_load | is_jalr;
 	// 0 source register, 1 immediate
-	wire is_u_type = is_lui;
+	wire is_u_type = is_lui | is_auipc;
 	wire is_j_type = is_jal;
 
 	wire is_reg_arg1 = is_r_type | is_s_type | is_b_type | is_i_type;
