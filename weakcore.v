@@ -26,19 +26,20 @@ module weakcore(
 			regs[0] <= 32'h0;
 	end
 
-	reg [3:0] stage_state;
+	reg [4:0] stage_state;
 	wire stage_if = stage_state[0];
-	wire stage_exe = stage_state[2];
-	wire stage_wb = stage_state[3];
+	wire stage_id = stage_state[2];
+	wire stage_exe = stage_state[3];
+	wire stage_wb = stage_state[4];
 	wire ready_if;
 	wire ready_exe;
-	wire [3:0] stage_ready = { 1'b1, ready_exe, 1'b1, ready_if };
+	wire [4:0] stage_ready = { 1'b1, ready_exe, 1'b1, 1'b1, ready_if };
 
 	always @ (posedge clk) begin
 		if (~rst)
-			stage_state <= 4'b0001;
+			stage_state <= 5'b0001;
 		else if (|(stage_ready & stage_state))
-			stage_state <= { stage_state[2:0], stage_state[3] };
+			stage_state <= { stage_state[3:0], stage_state[4] };
 	end
 
 	/* ================= Instruction fetch ======================== */
@@ -167,49 +168,94 @@ module weakcore(
 				({32{is_j_type}} & instr_j_imm);
 
 	/* How to execute the operation */
-	wire op_add		= is_add | is_addi | is_lui | is_auipc;
-	wire op_sub		= is_sub;
-	wire op_load		= is_load;
-	wire op_store		= is_store;
-	wire op_cmp_less	= is_blt | is_slti | is_slt |
+	wire op_add_tmp		= is_add | is_addi | is_lui | is_auipc;
+	wire op_sub_tmp		= is_sub;
+	wire op_load_tmp	= is_load;
+	wire op_store_tmp	= is_store;
+	wire op_cmp_less_tmp	= is_blt | is_slti | is_slt |
 				  is_bge;
-	wire op_cmp_less_u	= is_sltiu | is_sltu | is_bltu |
+	wire op_cmp_less_u_tmp	= is_sltiu | is_sltu | is_bltu |
 				  is_bgeu;
-	wire op_cmp_eq		= is_beq |
+	wire op_cmp_eq_tmp	= is_beq |
 				  is_bne;
-	wire op_xor		= is_xori | is_xor;
-	wire op_or		= is_ori | is_or;
-	wire op_and		= is_andi | is_and;
-	wire op_shift_left	= is_slli | is_sll;
-	wire op_shift_right_l	= is_srli | is_srl;
-	wire op_shift_right_a	= is_srai | is_sra;
+	wire op_xor_tmp		= is_xori | is_xor;
+	wire op_or_tmp		= is_ori | is_or;
+	wire op_and_tmp		= is_andi | is_and;
+	wire op_shift_left_tmp	= is_slli | is_sll;
+	wire op_shift_right_l_tmp = is_srli | is_srl;
+	wire op_shift_right_a_tmp = is_srai | is_sra;
 
-	wire [31:0] op_arg1 = ({32{is_reg_arg1}} & regs[instr_rs1]) |
-			      ({32{is_auipc}} & instr_pc);
-	wire [31:0] op_arg2 = ({32{is_reg_arg2}} & regs[instr_rs2]) |
-			      ({32{is_with_imm}} & instr_imm);
+	wire [31:0] op_arg1_tmp = ({32{is_reg_arg1}} & regs[instr_rs1]) |
+				  ({32{is_auipc}} & instr_pc);
+	wire [31:0] op_arg2_tmp = ({32{is_reg_arg2}} & regs[instr_rs2]) |
+				  ({32{is_with_imm}} & instr_imm);
 
-	wire [4:0] op_shamt = ({5{is_imm_shift}} & instr_shift_shamt) |
-			      ({5{is_reg_shift}} & regs[instr_rs2][4:0]);
+	wire [4:0] op_shamt_tmp = ({5{is_imm_shift}} & instr_shift_shamt) |
+				  ({5{is_reg_shift}} & regs[instr_rs2][4:0]);
 
-	wire op_mem_1b = is_lb | is_lbu | is_sb;
-	wire op_mem_2b = is_lh | is_lhu | is_sh;
-	wire op_mem_4b = is_lw | is_sw;
-	wire op_mem_signext = is_lb | is_lh;
+	wire op_mem_1b_tmp = is_lb | is_lbu | is_sb;
+	wire op_mem_2b_tmp = is_lh | is_lhu | is_sh;
+	wire op_mem_4b_tmp = is_lw | is_sw;
+	wire op_mem_signext_tmp = is_lb | is_lh;
 
-	wire [31:0] op_addr_base = ({32{is_load}} & regs[instr_rs1])	|
-				   ({32{is_store}} & regs[instr_rs1])	|
-				   ({32{is_jalr}} & regs[instr_rs1])	|
-				   ({32{is_cond_branch}} & instr_pc)	|
-				   ({32{is_jal}} & instr_pc);
-	wire [31:0] op_addr_disp = instr_imm;
-	wire [31:0] op_addr = op_addr_base + op_addr_disp;
+	wire [31:0] op_addr_base_tmp = ({32{is_load}} & regs[instr_rs1])  |
+				       ({32{is_store}} & regs[instr_rs1]) |
+				       ({32{is_jalr}} & regs[instr_rs1])  |
+				       ({32{is_cond_branch}} & instr_pc)  |
+				       ({32{is_jal}} & instr_pc);
+	wire [31:0] op_addr_disp_tmp = instr_imm;
+	wire [31:0] op_addr_tmp = op_addr_base_tmp + op_addr_disp_tmp;
 
 	/* How to process the result in writeback stage */
-	wire op_wb = is_imm_arith | is_reg_arith | is_load | is_lui | is_auipc;
-	wire op_cond_jump = is_cond_branch;
-	wire op_expected_res = is_bne | is_bge | is_bgeu ? 1'b0 : 1'b1;
-	wire op_jump = is_jal | is_jalr;
+	wire op_wb_tmp = is_imm_arith | is_reg_arith | is_load |
+			 is_lui | is_auipc;
+	wire op_cond_jump_tmp = is_cond_branch;
+	wire op_expected_res_tmp = is_bne | is_bge | is_bgeu ? 1'b0 : 1'b1;
+	wire op_jump_tmp = is_jal | is_jalr;
+
+	reg op_add, op_sub;
+	reg op_load, op_store;
+	reg op_cmp_less, op_cmp_less_u, op_cmp_eq;
+	reg op_xor, op_or, op_and;
+	reg op_shift_left, op_shift_right_l, op_shift_right_a;
+	reg [31:0] op_arg1;
+	reg [31:0] op_arg2;
+	reg [4:0] op_shamt;
+	reg op_mem_1b, op_mem_2b, op_mem_4b;
+	reg op_mem_signext;
+	reg [31:0] op_addr;
+
+	reg op_wb, op_cond_jump, op_expected_res, op_jump;
+
+	always @ (posedge clk) begin
+		if (stage_id) begin
+			op_add <= op_add_tmp;
+			op_sub <= op_sub_tmp;
+			op_load <= op_load_tmp;
+			op_store <= op_store_tmp;
+			op_cmp_less <= op_cmp_less_tmp;
+			op_cmp_less_u <= op_cmp_less_u_tmp;
+			op_cmp_eq <= op_cmp_eq_tmp;
+			op_xor <= op_xor_tmp;
+			op_or <= op_or_tmp;
+			op_and <= op_and_tmp;
+			op_shift_left <= op_shift_left_tmp;
+			op_shift_right_l <= op_shift_right_l_tmp;
+			op_shift_right_a <= op_shift_right_a_tmp;
+			op_arg1 <= op_arg1_tmp;
+			op_arg2 <= op_arg2_tmp;
+			op_shamt <= op_shamt_tmp;
+			op_mem_1b <= op_mem_1b_tmp;
+			op_mem_2b <= op_mem_2b_tmp;
+			op_mem_4b <= op_mem_4b_tmp;
+			op_mem_signext <= op_mem_signext_tmp;
+			op_addr <= op_addr_tmp;
+			op_wb <= op_wb_tmp;
+			op_cond_jump <= op_cond_jump_tmp;
+			op_expected_res <= op_expected_res_tmp;
+			op_jump <= op_jump_tmp;
+		end
+	end
 
 	/* =========================== Execution ====================== */
 	reg [31:0] op_result;
@@ -281,16 +327,16 @@ module weakcore(
 
 	/* ========================== Write back ====================== */
 	always @ (posedge clk) begin
-		if (stage_state[3] & op_wb & (|instr_rd)) begin
+		if (stage_wb & op_wb & (|instr_rd)) begin
 			regs[instr_rd] <= op_result;
 		end
 
-		if (stage_state[3] & op_cond_jump &
+		if (stage_wb & op_cond_jump &
 		    op_result[0] == op_expected_res) begin
 			pc <= op_addr;
 		end
 
-		if (stage_state[3] & op_jump) begin
+		if (stage_wb & op_jump) begin
 			if (|instr_rd)
 				regs[instr_rd] <= pc;	// Return address
 			pc <= op_addr;
