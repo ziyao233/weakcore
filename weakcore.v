@@ -73,8 +73,21 @@ module weakcore(
 	wire is_jalr		= instr_opcode == 7'b1100111;
 
 	wire is_blt	= is_cond_branch && instr_func3 == 3'b100;
+
 	wire is_addi	= is_imm_arith && instr_func3 == 3'b000;
 	wire is_slti	= is_imm_arith && instr_func3 == 3'b010;
+	wire is_sltiu	= is_imm_arith && instr_func3 == 3'b011;
+	wire is_xori	= is_imm_arith && instr_func3 == 3'b100;
+	wire is_ori	= is_imm_arith && instr_func3 == 3'b110;
+	wire is_andi	= is_imm_arith && instr_func3 == 3'b111;
+
+	wire is_slli	= is_imm_arith && instr_func3 == 3'b001;
+	wire is_srli	= is_imm_arith && instr_func3 == 3'b101 &&
+			  instr_func7 == 7'b0000000;
+	wire is_srai	= is_imm_arith && instr_func3 == 3'b101 &&
+			  instr_func7 == 7'b0100000;
+	wire is_imm_shift = is_slli | is_srli | is_srai;
+
 	wire is_add	= is_reg_arith && instr_func3 == 3'b000;
 	wire is_lw	= is_load && instr_func3 == 3'b010;
 	wire is_sw	= is_store && instr_func3 == 3'b010;
@@ -95,13 +108,15 @@ module weakcore(
 		 instr[31], instr[19:12], instr[20], instr[30:21],
 		 1'b0};
 
+	wire [4:0] instr_shift_shamt = instr_rs2;
+
 	// 2 source registers, 0 immediate
-	wire is_r_type = is_add;
+	wire is_r_type = is_add | is_imm_shift;
 	// 1 source registers, 1 immediate, no destination, 1 address register
 	wire is_s_type = is_sw;
 	wire is_b_type = is_cond_branch;
 	// 1 source register, 1 immediate
-	wire is_i_type = is_imm_arith | is_lw | is_jalr;
+	wire is_i_type = (is_imm_arith & ~is_imm_shift) | is_lw | is_jalr;
 	// 0 source register, 1 immediate
 	wire is_u_type = is_lui;
 	wire is_j_type = is_jal;
@@ -122,11 +137,20 @@ module weakcore(
 	wire op_load		= is_load;
 	wire op_store		= is_store;
 	wire op_cmp_less	= is_blt | is_slti;
+	wire op_cmp_less_u	= is_sltiu;
+	wire op_xor		= is_xori;
+	wire op_or		= is_ori;
+	wire op_and		= is_andi;
+	wire op_shift_left	= is_slli;
+	wire op_shift_right_l	= is_srli;
+	wire op_shift_right_a	= is_srai;
 
 	wire [31:0] op_arg1 = ({32{is_reg_arg1}} & regs[instr_rs1]) |
 			      ({32{is_auipc}} & instr_pc);
 	wire [31:0] op_arg2 = ({32{is_reg_arg2}} & regs[instr_rs2]) |
 			      ({32{is_with_imm}} & instr_imm);
+
+	wire [4:0] op_shamt = ({5{is_imm_shift}} & instr_shift_shamt);
 
 	wire [31:0] op_addr_base = ({32{is_load}} & regs[instr_rs1])	|
 				   ({32{is_store}} & regs[instr_rs1])	|
@@ -146,7 +170,8 @@ module weakcore(
 
 	wire [31:0] exe_adder_src1 = op_arg1;
 	wire [31:0] exe_adder_src2 = ({32{op_add}} & op_arg2)		|
-				     ({32{op_cmp_less}} & ~op_arg2);
+				     ({32{op_cmp_less}} & ~op_arg2)	|
+				     ({32{op_cmp_less_u}} & ~op_arg2);
 	wire exe_adder_cin = op_cmp_less;
 	wire exe_adder_cout;
 	wire [31:0] exe_adder_res;
@@ -156,11 +181,27 @@ module weakcore(
 	wire exe_cmp_less =
 		(op_arg1[31] & ~op_arg2[31])	|
 		(~(op_arg1[31] ^ op_arg2[31]) & exe_adder_res[31]);
+	wire exe_cmp_less_u = ~exe_adder_cout;
+
+	wire [31:0] exe_xor = op_arg1 ^ op_arg2;
+	wire [31:0] exe_or = op_arg1 | op_arg2;
+	wire [31:0] exe_and = op_arg1 & op_arg2;
+
+	wire [31:0] exe_shift_left	= op_arg1 << op_shamt;
+	wire [31:0] exe_shift_right_l	= op_arg1 >> op_shamt;
+	wire [31:0] exe_shift_right_a	= $signed(op_arg1) >>> op_shamt;
 
 	wire [31:0] op_tmp_result =
-		({32{op_add}} & exe_adder_res)			|
-		({32{op_cmp_less}} & {{31'b0, exe_cmp_less}})	|
-		({32{op_load}} & bus_in);
+		({32{op_add}} & exe_adder_res)				|
+		({32{op_cmp_less}} & {{31'b0, exe_cmp_less}})		|
+		({32{op_load}} & bus_in)				|
+		({32{op_cmp_less_u}} & {{31'b0, exe_cmp_less_u}})	|
+		({32{op_xor}} & exe_xor)				|
+		({32{op_or}} & exe_or)					|
+		({32{op_and}} & exe_and)				|
+		({32{op_shift_left}} & exe_shift_left)			|
+		({32{op_shift_right_l}} & exe_shift_right_l)		|
+		({32{op_shift_right_a}} & exe_shift_right_a);
 
 	assign ready_exe = (~op_load & ~op_store) | bus_ack;
 
