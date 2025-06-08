@@ -89,7 +89,27 @@ module weakcore(
 			  instr_func7 == 7'b0100000;
 	wire is_imm_shift = is_slli | is_srli | is_srai;
 
-	wire is_add	= is_reg_arith && instr_func3 == 3'b000;
+	wire is_add	= is_reg_arith && instr_func3 == 3'b000 &&
+			  instr_func7 == 7'b0000000;
+	wire is_sub	= is_reg_arith && instr_func3 == 3'b000 &&
+			  instr_func7 == 7'b0100000;
+	wire is_sll	= is_reg_arith && instr_func3 == 3'b001 &&
+			  instr_func7 == 7'b0000000;
+	wire is_slt	= is_reg_arith && instr_func3 == 3'b010 &&
+			  instr_func7 == 7'b0000000;
+	wire is_sltu	= is_reg_arith && instr_func3 == 3'b011 &&
+			  instr_func7 == 7'b0000000;
+	wire is_xor	= is_reg_arith && instr_func3 == 3'b100 &&
+			  instr_func7 == 7'b0000000;
+	wire is_srl	= is_reg_arith && instr_func3 == 3'b101 &&
+			  instr_func7 == 7'b0000000;
+	wire is_sra	= is_reg_arith && instr_func3 == 3'b101 &&
+			  instr_func7 == 7'b0100000;
+	wire is_or	= is_reg_arith && instr_func3 == 3'b110 &&
+			  instr_func7 == 7'b0000000;
+	wire is_and	= is_reg_arith && instr_func3 == 3'b111 &&
+			  instr_func7 == 7'b0000000;
+	wire is_reg_shift = is_sll | is_srl | is_sra;
 
 	wire is_lb	= is_load && instr_func3 == 3'b000;
 	wire is_lh	= is_load && instr_func3 == 3'b001;
@@ -120,7 +140,7 @@ module weakcore(
 	wire [4:0] instr_shift_shamt = instr_rs2;
 
 	// 2 source registers, 0 immediate
-	wire is_r_type = is_add | is_imm_shift;
+	wire is_r_type = is_reg_arith | is_imm_shift;
 	// 1 source registers, 1 immediate, no destination, 1 address register
 	wire is_s_type = is_store;
 	wire is_b_type = is_cond_branch;
@@ -143,23 +163,25 @@ module weakcore(
 
 	/* How to execute the operation */
 	wire op_add		= is_add | is_addi | is_lui | is_auipc;
+	wire op_sub		= is_sub;
 	wire op_load		= is_load;
 	wire op_store		= is_store;
-	wire op_cmp_less	= is_blt | is_slti;
-	wire op_cmp_less_u	= is_sltiu;
-	wire op_xor		= is_xori;
-	wire op_or		= is_ori;
-	wire op_and		= is_andi;
-	wire op_shift_left	= is_slli;
-	wire op_shift_right_l	= is_srli;
-	wire op_shift_right_a	= is_srai;
+	wire op_cmp_less	= is_blt | is_slti | is_slt;
+	wire op_cmp_less_u	= is_sltiu | is_sltu;
+	wire op_xor		= is_xori | is_xor;
+	wire op_or		= is_ori | is_or;
+	wire op_and		= is_andi | is_and;
+	wire op_shift_left	= is_slli | is_sll;
+	wire op_shift_right_l	= is_srli | is_srl;
+	wire op_shift_right_a	= is_srai | is_sra;
 
 	wire [31:0] op_arg1 = ({32{is_reg_arg1}} & regs[instr_rs1]) |
 			      ({32{is_auipc}} & instr_pc);
 	wire [31:0] op_arg2 = ({32{is_reg_arg2}} & regs[instr_rs2]) |
 			      ({32{is_with_imm}} & instr_imm);
 
-	wire [4:0] op_shamt = ({5{is_imm_shift}} & instr_shift_shamt);
+	wire [4:0] op_shamt = ({5{is_imm_shift}} & instr_shift_shamt) |
+			      ({5{is_reg_shift}} & regs[instr_rs2][4:0]);
 
 	wire op_mem_1b = is_lb | is_lbu | is_sb;
 	wire op_mem_2b = is_lh | is_lhu | is_sh;
@@ -175,18 +197,18 @@ module weakcore(
 	wire [31:0] op_addr = op_addr_base + op_addr_disp;
 
 	/* How to process the result in writeback stage */
-	wire op_wb = is_imm_arith | is_add | is_load | is_lui | is_auipc;
+	wire op_wb = is_imm_arith | is_reg_arith | is_load | is_lui | is_auipc;
 	wire op_cond_jump = is_cond_branch;
 	wire op_jump = is_jal | is_jalr;
 
 	/* =========================== Execution ====================== */
 	reg [31:0] op_result;
 
+	wire exe_adder_submode = op_cmp_less | op_cmp_less_u | op_sub;
 	wire [31:0] exe_adder_src1 = op_arg1;
 	wire [31:0] exe_adder_src2 = ({32{op_add}} & op_arg2)		|
-				     ({32{op_cmp_less}} & ~op_arg2)	|
-				     ({32{op_cmp_less_u}} & ~op_arg2);
-	wire exe_adder_cin = op_cmp_less;
+				     ({32{exe_adder_submode}} & ~op_arg2);
+	wire exe_adder_cin = exe_adder_submode;
 	wire exe_adder_cout;
 	wire [31:0] exe_adder_res;
 	assign {exe_adder_cout, exe_adder_res} =
@@ -224,6 +246,7 @@ module weakcore(
 
 	wire [31:0] op_tmp_result =
 		({32{op_add}} & exe_adder_res)				|
+		({32{op_sub}} & exe_adder_res)				|
 		({32{op_cmp_less}} & {{31'b0, exe_cmp_less}})		|
 		({32{op_load}} & exe_load_res)				|
 		({32{op_cmp_less_u}} & {{31'b0, exe_cmp_less_u}})	|
