@@ -70,6 +70,7 @@ module weakcore(
 	wire is_lui		= instr_opcode == 7'b0110111;
 	wire is_auipc		= instr_opcode == 7'b0010111;
 
+	wire is_blt	= is_cond_branch && instr_func3 == 3'b100;
 	wire is_addi	= is_imm_arith && instr_func3 == 3'b000;
 	wire is_slti	= is_imm_arith && instr_func3 == 3'b010;
 	wire is_add	= is_reg_arith && instr_func3 == 3'b000;
@@ -96,7 +97,7 @@ module weakcore(
 	wire is_r_type = is_add;
 	// 1 source registers, 1 immediate, no destination, 1 address register
 	wire is_s_type = is_sw;
-	wire is_b_type;
+	wire is_b_type = is_cond_branch;
 	// 1 source register, 1 immediate
 	wire is_i_type = is_imm_arith | is_lw;
 	// 0 source register, 1 immediate
@@ -105,8 +106,8 @@ module weakcore(
 
 	wire is_reg_arg1 = is_r_type | is_s_type | is_b_type | is_i_type;
 	wire is_reg_arg2 = is_r_type | is_s_type | is_b_type;
-	wire is_with_imm = is_s_type | is_b_type | is_i_type |
-			   is_u_type | is_j_type;
+	// In B-Type, IMMs are not for operands but for addressing
+	wire is_with_imm = is_s_type | is_i_type | is_u_type | is_j_type;
 
 	wire [31:0] instr_imm = ({32{is_s_type}} & instr_s_imm) |
 				({32{is_b_type}} & instr_b_imm) |
@@ -118,7 +119,7 @@ module weakcore(
 	wire op_add		= is_add | is_addi | is_lui | is_auipc;
 	wire op_load		= is_load;
 	wire op_store		= is_store;
-	wire op_cmp_less	= is_slti;
+	wire op_cmp_less	= is_blt | is_slti;
 
 	wire [31:0] op_arg1 = ({32{is_reg_arg1}} & regs[instr_rs1]) |
 			      ({32{is_auipc}} & instr_pc);
@@ -126,13 +127,14 @@ module weakcore(
 			      ({32{is_with_imm}} & instr_imm);
 
 	wire [31:0] op_addr_base = ({32{is_load}} & regs[instr_rs1])	|
-				   ({32{is_store}} & regs[instr_rs1]);
+				   ({32{is_store}} & regs[instr_rs1])	|
+				   ({32{is_cond_branch}} & instr_pc);
 	wire [31:0] op_addr_disp = instr_imm;
 	wire [31:0] op_addr = op_addr_base + op_addr_disp;
 
 	/* How to process the result in writeback stage */
 	wire op_wb = is_imm_arith | is_add | is_load | is_lui | is_auipc;
-	wire op_jump;
+	wire op_cond_jump = is_cond_branch;
 
 	/* =========================== Execution ====================== */
 	reg [31:0] op_result;
@@ -172,6 +174,10 @@ module weakcore(
 	always @ (posedge clk) begin
 		if (stage_state[3] & op_wb & (|instr_rd)) begin
 			regs[instr_rd] <= op_result;
+		end
+
+		if (stage_state[3] & op_cond_jump & op_result[0]) begin
+			pc <= op_addr;
 		end
 	end
 
