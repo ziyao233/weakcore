@@ -69,6 +69,8 @@ module weakcore(
 	wire is_reg_arith	= instr_opcode == 7'b0110011;
 	wire is_lui		= instr_opcode == 7'b0110111;
 	wire is_auipc		= instr_opcode == 7'b0010111;
+	wire is_jal		= instr_opcode == 7'b1101111;
+	wire is_jalr		= instr_opcode == 7'b1100111;
 
 	wire is_blt	= is_cond_branch && instr_func3 == 3'b100;
 	wire is_addi	= is_imm_arith && instr_func3 == 3'b000;
@@ -99,10 +101,10 @@ module weakcore(
 	wire is_s_type = is_sw;
 	wire is_b_type = is_cond_branch;
 	// 1 source register, 1 immediate
-	wire is_i_type = is_imm_arith | is_lw;
+	wire is_i_type = is_imm_arith | is_lw | is_jalr;
 	// 0 source register, 1 immediate
 	wire is_u_type = is_lui;
-	wire is_j_type;
+	wire is_j_type = is_jal;
 
 	wire is_reg_arg1 = is_r_type | is_s_type | is_b_type | is_i_type;
 	wire is_reg_arg2 = is_r_type | is_s_type | is_b_type;
@@ -128,13 +130,16 @@ module weakcore(
 
 	wire [31:0] op_addr_base = ({32{is_load}} & regs[instr_rs1])	|
 				   ({32{is_store}} & regs[instr_rs1])	|
-				   ({32{is_cond_branch}} & instr_pc);
+				   ({32{is_jalr}} & regs[instr_rs1])	|
+				   ({32{is_cond_branch}} & instr_pc)	|
+				   ({32{is_jal}} & instr_pc);
 	wire [31:0] op_addr_disp = instr_imm;
 	wire [31:0] op_addr = op_addr_base + op_addr_disp;
 
 	/* How to process the result in writeback stage */
 	wire op_wb = is_imm_arith | is_add | is_load | is_lui | is_auipc;
 	wire op_cond_jump = is_cond_branch;
+	wire op_jump = is_jal | is_jalr;
 
 	/* =========================== Execution ====================== */
 	reg [31:0] op_result;
@@ -177,6 +182,12 @@ module weakcore(
 		end
 
 		if (stage_state[3] & op_cond_jump & op_result[0]) begin
+			pc <= op_addr;
+		end
+
+		if (stage_state[3] & op_jump) begin
+			if (|instr_rd)
+				regs[instr_rd] <= pc;	// Return address
 			pc <= op_addr;
 		end
 	end
