@@ -73,7 +73,7 @@ bench:register(function(bench)
 
 			if wr then
 				if addr == 0x80000000 then
-					print(data);
+					print(("%d (0x%x)"):format(data, data));
 				elseif addr == 0x80000004 then
 					io.write(string.char((data & 0xff)));
 				elseif addr == 0x80000008 then
