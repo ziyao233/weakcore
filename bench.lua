@@ -16,9 +16,9 @@ local maxcycle = os.getenv("MAXCYCLE") or math.maxinteger;
 
 local bench = coverify.Bench(weakcore);
 
--- 16KiB
+-- 64KiB
 local ram = { };
-for i = 1, 4096 do
+for i = 1, 16384 do
 	ram[i] = 0;
 end
 
