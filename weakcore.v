@@ -73,7 +73,12 @@ module weakcore(
 	wire is_jal		= instr_opcode == 7'b1101111;
 	wire is_jalr		= instr_opcode == 7'b1100111;
 
+	wire is_beq	= is_cond_branch && instr_func3 == 3'b000;
+	wire is_bne	= is_cond_branch && instr_func3 == 3'b001;
 	wire is_blt	= is_cond_branch && instr_func3 == 3'b100;
+	wire is_bge	= is_cond_branch && instr_func3 == 3'b101;
+	wire is_bltu	= is_cond_branch && instr_func3 == 3'b110;
+	wire is_bgeu	= is_cond_branch && instr_func3 == 3'b111;
 
 	wire is_addi	= is_imm_arith && instr_func3 == 3'b000;
 	wire is_slti	= is_imm_arith && instr_func3 == 3'b010;
@@ -166,8 +171,12 @@ module weakcore(
 	wire op_sub		= is_sub;
 	wire op_load		= is_load;
 	wire op_store		= is_store;
-	wire op_cmp_less	= is_blt | is_slti | is_slt;
-	wire op_cmp_less_u	= is_sltiu | is_sltu;
+	wire op_cmp_less	= is_blt | is_slti | is_slt |
+				  is_bge;
+	wire op_cmp_less_u	= is_sltiu | is_sltu | is_bltu |
+				  is_bgeu;
+	wire op_cmp_eq		= is_beq |
+				  is_bne;
 	wire op_xor		= is_xori | is_xor;
 	wire op_or		= is_ori | is_or;
 	wire op_and		= is_andi | is_and;
@@ -199,6 +208,7 @@ module weakcore(
 	/* How to process the result in writeback stage */
 	wire op_wb = is_imm_arith | is_reg_arith | is_load | is_lui | is_auipc;
 	wire op_cond_jump = is_cond_branch;
+	wire op_expected_res = is_bne | is_bge | is_bgeu ? 1'b0 : 1'b1;
 	wire op_jump = is_jal | is_jalr;
 
 	/* =========================== Execution ====================== */
@@ -218,6 +228,7 @@ module weakcore(
 		(op_arg1[31] & ~op_arg2[31])	|
 		(~(op_arg1[31] ^ op_arg2[31]) & exe_adder_res[31]);
 	wire exe_cmp_less_u = ~exe_adder_cout;
+	wire exe_cmp_eq = op_arg1 == op_arg2;
 
 	wire [31:0] exe_xor = op_arg1 ^ op_arg2;
 	wire [31:0] exe_or = op_arg1 | op_arg2;
@@ -255,7 +266,8 @@ module weakcore(
 		({32{op_and}} & exe_and)				|
 		({32{op_shift_left}} & exe_shift_left)			|
 		({32{op_shift_right_l}} & exe_shift_right_l)		|
-		({32{op_shift_right_a}} & exe_shift_right_a);
+		({32{op_shift_right_a}} & exe_shift_right_a)		|
+		({32{op_cmp_eq}} & {{31'b0, exe_cmp_eq}});
 
 	assign ready_exe = (~op_load & ~op_store) | bus_ack;
 
@@ -273,7 +285,8 @@ module weakcore(
 			regs[instr_rd] <= op_result;
 		end
 
-		if (stage_state[3] & op_cond_jump & op_result[0]) begin
+		if (stage_state[3] & op_cond_jump &
+		    op_result[0] == op_expected_res) begin
 			pc <= op_addr;
 		end
 
