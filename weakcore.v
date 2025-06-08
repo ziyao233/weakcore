@@ -14,7 +14,8 @@ module weakcore(
 	output wire [31:0] bus_addr,
 	output wire bus_req,
 	input wire bus_ack,
-	output wire bus_wr);
+	output wire bus_wr,
+	output wire [3:0] bus_wr_mask);
 
 	/* ==================== Register Heap ==================== */
 
@@ -89,7 +90,13 @@ module weakcore(
 	wire is_imm_shift = is_slli | is_srli | is_srai;
 
 	wire is_add	= is_reg_arith && instr_func3 == 3'b000;
+
+	wire is_lb	= is_load && instr_func3 == 3'b000;
+	wire is_lh	= is_load && instr_func3 == 3'b001;
 	wire is_lw	= is_load && instr_func3 == 3'b010;
+	wire is_lbu	= is_load && instr_func3 == 3'b100;
+	wire is_lhu	= is_load && instr_func3 == 3'b101;
+
 	wire is_sw	= is_store && instr_func3 == 3'b010;
 
 	wire [4:0] instr_rd	= instr[11:7];
@@ -116,7 +123,7 @@ module weakcore(
 	wire is_s_type = is_sw;
 	wire is_b_type = is_cond_branch;
 	// 1 source register, 1 immediate
-	wire is_i_type = (is_imm_arith & ~is_imm_shift) | is_lw | is_jalr;
+	wire is_i_type = (is_imm_arith & ~is_imm_shift) | is_load | is_jalr;
 	// 0 source register, 1 immediate
 	wire is_u_type = is_lui;
 	wire is_j_type = is_jal;
@@ -151,6 +158,11 @@ module weakcore(
 			      ({32{is_with_imm}} & instr_imm);
 
 	wire [4:0] op_shamt = ({5{is_imm_shift}} & instr_shift_shamt);
+
+	wire op_mem_1b = is_lb | is_lbu;
+	wire op_mem_2b = is_lh | is_lhu;
+	wire op_mem_4b = is_lw;
+	wire op_mem_signext = is_lb | is_lh;
 
 	wire [31:0] op_addr_base = ({32{is_load}} & regs[instr_rs1])	|
 				   ({32{is_store}} & regs[instr_rs1])	|
@@ -191,10 +203,23 @@ module weakcore(
 	wire [31:0] exe_shift_right_l	= op_arg1 >> op_shamt;
 	wire [31:0] exe_shift_right_a	= $signed(op_arg1) >>> op_shamt;
 
+	wire exe_bus_req = op_load | op_store;
+	wire exe_bus_wr = op_store;
+	wire [31:0] exe_bus_out = op_arg2;
+
+	wire [31:0] exe_load_mask = ({24'b0, {8{op_mem_1b}}})	|
+				    ({16'b0, {16{op_mem_2b}}})	|
+				    ({32{op_mem_4b}});
+	wire [4:0] exe_load_shift = {op_addr[1:0], 3'b000};
+	wire [31:0] exe_load_data = (bus_in >> exe_load_shift) & exe_load_mask;
+	wire [31:0] exe_load_res = exe_load_data | (op_mem_signext ?
+		{{24{op_mem_1b & exe_load_data[7]}}, 8'b0}	|
+		{{16{op_mem_2b & exe_load_data[15]}}, 16'b0} : 0);
+
 	wire [31:0] op_tmp_result =
 		({32{op_add}} & exe_adder_res)				|
 		({32{op_cmp_less}} & {{31'b0, exe_cmp_less}})		|
-		({32{op_load}} & bus_in)				|
+		({32{op_load}} & exe_load_res)				|
 		({32{op_cmp_less_u}} & {{31'b0, exe_cmp_less_u}})	|
 		({32{op_xor}} & exe_xor)				|
 		({32{op_or}} & exe_or)					|
@@ -205,9 +230,6 @@ module weakcore(
 
 	assign ready_exe = (~op_load & ~op_store) | bus_ack;
 
-	wire exe_bus_req = op_load | op_store;
-	wire exe_bus_wr = op_store;
-	wire [31:0] exe_bus_out = op_arg2;
 
 	always @ (posedge clk) begin
 		if (~rst)
@@ -236,9 +258,10 @@ module weakcore(
 	/* ========================== Bus control ====================== */
 	assign bus_req	= stage_if | (stage_exe & exe_bus_req);
 	assign bus_addr	= ({32{stage_if}} & pc) |
-			  ({32{stage_exe & exe_bus_req}} & op_addr);
+			  ({32{stage_exe & exe_bus_req}} & op_addr & ~32'b11);
 	assign bus_wr	= stage_exe & exe_bus_wr;
 	assign bus_out	= {32{stage_exe & exe_bus_req}} & exe_bus_out;
+	assign bus_wr_mask = 4'b1111;
 
 `ifdef DUMP
 	initial begin

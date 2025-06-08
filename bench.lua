@@ -66,10 +66,16 @@ bench:register(function(bench)
 			local addr = bench:get("bus_addr");
 			local data = bench:get("bus_out");
 			local wr = bench:get("bus_wr") == 1;
+			local wr_mask = bench:get("bus_wr_mask");
 
 			printBusOperation(wr, addr, data);
 
 			bench:waitClk("posedge");
+
+			wr_mask = ((wr_mask >> 0) & 0x1) * 0xff		|
+				  ((wr_mask >> 1) & 0x1) * 0xff00	|
+				  ((wr_mask >> 2) & 0x1) * 0xff0000	|
+				  ((wr_mask >> 3) & 0x1) * 0xff000000;
 
 			if wr then
 				if addr == 0x80000000 then
@@ -79,7 +85,8 @@ bench:register(function(bench)
 				elseif addr == 0x80000008 then
 					bench:pass();
 				else
-					ram[addr / 4 + 1] = data;
+					local d = ram[addr / 4 + 1];
+					ram[addr / 4 + 1] = (d & ~wr_mask) | data;
 				end
 			else
 				bench:set("bus_in", ram[addr / 4 + 1]);
