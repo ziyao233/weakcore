@@ -50,7 +50,7 @@ end
 local printBusOperation = os.getenv("DEBUG_BUS") and
 	function(wr, wr_mask, addr, data)
 		local maskMsg = wr and (" mask = 0x%x"):format(wr_mask) or "";
-		data = wr and data or ram[addr / 4 + 1];
+		data = wr and data or ram[addr // 4 + 1];
 		print(("BUSOP: %s 0x%08x, data = 0x%08x%s"):
 		      format(wr and "write" or "read", addr, data, maskMsg));
 	end or
@@ -86,11 +86,12 @@ bench:register(function(bench)
 				elseif addr == 0x80000008 then
 					bench:pass();
 				else
-					local d = ram[addr / 4 + 1];
-					ram[addr / 4 + 1] = (d & ~wr_mask) | data;
+					local d = ram[addr // 4 + 1];
+					ram[addr // 4 + 1] = (d & ~wr_mask) |
+							     (data & wr_mask);
 				end
 			else
-				bench:set("bus_in", ram[addr / 4 + 1]);
+				bench:set("bus_in", ram[addr // 4 + 1]);
 			end
 
 			bench:set("bus_ack", 1);
