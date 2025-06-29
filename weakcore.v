@@ -357,4 +357,4 @@ module weakcore(
 		$dumpvars();
 	end
 `endif
-endmodule;
+endmodule
