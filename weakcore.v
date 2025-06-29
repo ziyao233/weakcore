@@ -51,7 +51,6 @@ module weakcore(
 			pc <= 32'h0;
 		end else if (stage_if & bus_ack) begin
 			instr_pc <= pc;
-			pc <= pc + 32'd4;
 			instr <= bus_in;
 		end
 	end
@@ -330,13 +329,16 @@ module weakcore(
 		if (stage_wb & op_wb & (|instr_rd)) begin
 			regs[instr_rd] <= op_result;
 		end
+	end
 
-		if (stage_wb & op_cond_jump &
-		    op_result[0] == op_expected_res) begin
+	/* ===================== PC update ========================== */
+	always @ (posedge clk) begin
+		if (stage_if & bus_ack) begin
+			pc <= pc + 32'd4;
+		end else if (stage_wb & op_cond_jump &
+			 op_result[0] == op_expected_res) begin
 			pc <= op_addr;
-		end
-
-		if (stage_wb & op_jump) begin
+		end else if (stage_wb & op_jump) begin
 			if (|instr_rd)
 				regs[instr_rd] <= pc;	// Return address
 			pc <= op_addr;
