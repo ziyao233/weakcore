@@ -48,7 +48,8 @@ module weakcore(
 	reg [31:0] instr;
 	always @ (posedge clk) begin
 		if (~rst) begin
-			pc <= 32'h0;
+			instr_pc <= 32'h0;
+			instr <= 32'h0;
 		end else if (stage_if & bus_ack) begin
 			instr_pc <= pc;
 			instr <= bus_in;
@@ -227,7 +228,33 @@ module weakcore(
 	reg op_wb, op_cond_jump, op_expected_res, op_jump;
 
 	always @ (posedge clk) begin
-		if (stage_id) begin
+		if (~rst) begin
+			op_add <= 1'b0;
+			op_sub <= 1'b0;
+			op_load <= 1'b0;
+			op_store <= 1'b0;
+			op_cmp_less <= 1'b0;
+			op_cmp_less_u <= 1'b0;
+			op_cmp_eq <= 1'b0;
+			op_xor <= 1'b0;
+			op_or <= 1'b0;
+			op_and <= 1'b0;
+			op_shift_left <= 1'b0;
+			op_shift_right_l <= 1'b0;
+			op_shift_right_a <= 1'b0;
+			op_arg1 <= 32'b0;
+			op_arg2 <= 32'b0;
+			op_shamt <= 5'b0;
+			op_mem_1b <= 1'b0;
+			op_mem_2b <= 1'b0;
+			op_mem_4b <= 1'b0;
+			op_mem_signext <= 1'b0;
+			op_addr <= 32'b0;
+			op_wb <= 1'b0;
+			op_cond_jump <= 1'b0;
+			op_expected_res <= 1'b0;
+			op_jump <= 1'b0;
+		end else if (stage_id) begin
 			op_add <= op_add_tmp;
 			op_sub <= op_sub_tmp;
 			op_load <= op_load_tmp;
@@ -333,7 +360,9 @@ module weakcore(
 
 	/* ===================== PC update ========================== */
 	always @ (posedge clk) begin
-		if (stage_if & bus_ack) begin
+		if (~rst) begin
+			pc <= 32'h0;
+		end else if (stage_if & bus_ack) begin
 			pc <= pc + 32'd4;
 		end else if (stage_wb & op_cond_jump &
 			 op_result[0] == op_expected_res) begin
